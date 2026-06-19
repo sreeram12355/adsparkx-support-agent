@@ -76,7 +76,7 @@ Code map:
 
 ```
 persona-support-agent/
-├── data/                      # Knowledge base (18 docs incl. 2 PDFs)
+├── data/                      # Knowledge base (16 docs: 14 Markdown + 2 PDF)
 ├── scripts/generate_pdfs.py   # Builds the sample PDF policies
 ├── src/
 │   ├── config.py              # All tunable settings + escalation rules
