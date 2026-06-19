@@ -14,14 +14,16 @@ from typing import List
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # --- Project paths -----------------------------------------------------------
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
 STORAGE_DIR = ROOT_DIR / "storage"          # FAISS index + chunk metadata
 INDEX_PATH = STORAGE_DIR / "faiss.index"
 CHUNKS_PATH = STORAGE_DIR / "chunks.json"
+
+# Load .env from the project root explicitly so it works regardless of the
+# current working directory (e.g. when launched by an external tool).
+load_dotenv(ROOT_DIR / ".env")
 
 
 def _get_float(name: str, default: float) -> float:
