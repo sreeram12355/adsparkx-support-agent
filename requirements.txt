@@ -1,0 +1,20 @@
+# Core LLM
+openai>=1.40.0
+
+# RAG: local embeddings + vector store
+sentence-transformers>=3.0.0
+faiss-cpu>=1.8.0
+numpy>=1.26.0
+
+# Document loading
+pypdf>=4.2.0
+python-docx>=1.1.0
+
+# Config / env
+python-dotenv>=1.0.0
+
+# UI
+streamlit>=1.36.0
+
+# PDF generation for the sample knowledge base (used by scripts/generate_pdfs.py)
+reportlab>=4.2.0
