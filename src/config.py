@@ -40,9 +40,15 @@ def _get_int(name: str, default: int) -> int:
 
 @dataclass
 class Settings:
-    # --- LLM (OpenAI) ---
-    openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o"))
+    # --- LLM (Google Gemini) ---
+    # Accept either GOOGLE_API_KEY or GEMINI_API_KEY for convenience.
+    google_api_key: str = field(
+        default_factory=lambda: os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GEMINI_API_KEY", "")
+    )
+    gemini_model: str = field(
+        default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    )
 
     # --- Embeddings (local Sentence-Transformers) ---
     embedding_model: str = field(
@@ -93,7 +99,7 @@ class Settings:
 
     @property
     def has_api_key(self) -> bool:
-        return bool(self.openai_api_key and self.openai_api_key.strip())
+        return bool(self.google_api_key and self.google_api_key.strip())
 
 
 settings = Settings()

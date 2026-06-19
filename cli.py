@@ -12,6 +12,14 @@ from __future__ import annotations
 import json
 import sys
 
+# Windows consoles default to cp1252 and crash on characters like → or — that
+# appear in model output / citations. Force UTF-8 (replace anything unmappable).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 from src.config import settings
 from src.ingest import build_index, index_exists
 
@@ -68,8 +76,8 @@ def print_turn(result):
 
 def main():
     if not settings.has_api_key:
-        print(_c(RED, "ERROR: OPENAI_API_KEY is not set."))
-        print("Copy .env.example to .env and add your OpenAI key, then retry.")
+        print(_c(RED, "ERROR: GOOGLE_API_KEY is not set."))
+        print("Copy .env.example to .env and add your Gemini key, then retry.")
         sys.exit(1)
 
     ensure_index()

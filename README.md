@@ -31,7 +31,7 @@ agent escalates instead of hallucinating.
 | Layer | Choice | Version |
 |-------|--------|---------|
 | Language | Python | 3.11+ |
-| LLM | OpenAI GPT (`gpt-4o`, configurable) | `openai>=1.40` |
+| LLM | Google Gemini (`gemini-2.5-flash`, configurable) | `google-genai>=1.0` |
 | Embeddings | Sentence-Transformers `all-MiniLM-L6-v2` (local, offline) | `sentence-transformers>=3.0` |
 | Vector DB | FAISS (`IndexFlatIP`, cosine) | `faiss-cpu>=1.8` |
 | Doc loading | `pypdf`, `python-docx` | — |
@@ -40,8 +40,13 @@ agent escalates instead of hallucinating.
 | Config | `python-dotenv` | `>=1.0` |
 
 > **Why local embeddings?** No API cost, fully offline ingestion, and retrieval
-> still works even when the OpenAI quota is exhausted. Only generation/persona
-> detection require the OpenAI key.
+> still works even when the LLM quota is exhausted. Only generation/persona
+> detection require the Gemini key.
+>
+> **Why Gemini?** It offers a generous free tier (a free API key from
+> [Google AI Studio](https://aistudio.google.com/app/apikey) is enough to run
+> this assignment). The LLM layer is isolated in `src/llm.py`, so swapping to
+> OpenAI / Claude / Ollama is a single-file change.
 
 ---
 
@@ -102,7 +107,7 @@ persona-support-agent/
 1. **Rule-based signal** (`personas.py → rule_based_scores`): each persona has a
    keyword list. We count hits; for the Frustrated User we also count `!` and
    ALL-CAPS shouting. This is deterministic, instant, and works offline.
-2. **LLM judge** (`llm.py → detect_persona`): GPT receives the message, the
+2. **LLM judge** (`llm.py → detect_persona`): Gemini receives the message, the
    recent conversation, the three persona descriptions, **and the rule-based
    hit counts as a hint**, then returns strict JSON:
    `{persona, confidence, sentiment, reason}` (temperature 0, JSON mode).
@@ -189,7 +194,7 @@ pip install -r requirements.txt
 
 # 4. Add your API key
 cp .env.example .env          # Windows: copy .env.example .env
-# then edit .env and set OPENAI_API_KEY=sk-...
+# then edit .env and set GOOGLE_API_KEY=...  (free key from aistudio.google.com)
 
 # 5. (Optional) regenerate the sample PDFs — already committed under /data
 python scripts/generate_pdfs.py
@@ -212,8 +217,8 @@ The first run downloads the embedding model (~90 MB) once.
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `OPENAI_API_KEY` | ✅ | — | OpenAI key for persona detection + generation |
-| `OPENAI_MODEL` | ❌ | `gpt-4o` | Chat model |
+| `GOOGLE_API_KEY` | ✅ | — | Gemini key for persona detection + generation (`GEMINI_API_KEY` also accepted) |
+| `GEMINI_MODEL` | ❌ | `gemini-2.5-flash` | Chat model |
 | `EMBEDDING_MODEL` | ❌ | `all-MiniLM-L6-v2` | Local embedding model |
 | `TOP_K` | ❌ | `4` | Chunks retrieved per query |
 | `MIN_RETRIEVAL_SCORE` | ❌ | `0.30` | Relevance / escalation threshold |

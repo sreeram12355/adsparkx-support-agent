@@ -63,12 +63,12 @@ def main():
     st.caption("Persona-adaptive · RAG-grounded · human-in-the-loop")
 
     if not settings.has_api_key:
-        st.error("OPENAI_API_KEY is not set. Add it to a `.env` file and restart.")
+        st.error("GOOGLE_API_KEY is not set. Add it to a `.env` file and restart.")
         st.stop()
 
     with st.sidebar:
         st.header("Settings (read-only)")
-        st.write(f"**LLM model:** `{settings.openai_model}`")
+        st.write(f"**LLM model:** `{settings.gemini_model}`")
         st.write(f"**Embeddings:** `{settings.embedding_model}`")
         st.write(f"**top_k:** {settings.top_k}")
         st.write(f"**Min retrieval score:** {settings.min_retrieval_score}")

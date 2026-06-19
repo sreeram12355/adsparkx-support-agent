@@ -1,5 +1,5 @@
 # Core LLM
-openai>=1.40.0
+google-genai>=1.0.0
 
 # RAG: local embeddings + vector store
 sentence-transformers>=3.0.0

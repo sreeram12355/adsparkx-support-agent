@@ -1,21 +1,24 @@
-"""OpenAI-backed LLM functions: persona detection and grounded generation.
+"""Google Gemini-backed LLM functions: persona detection and grounded generation.
 
 Two responsibilities:
   1. detect_persona() — classify the message into one of the three personas
      (hybrid: rule-based signal + LLM judgement) and return a sentiment score.
   2. generate_answer() — produce a persona-adapted answer grounded ONLY in the
      retrieved knowledge-base context (no hallucination).
+
+Uses the unified `google-genai` SDK. Embeddings stay local (see embeddings.py);
+only these text-generation calls require the Gemini API key.
 """
 from __future__ import annotations
 
 import json
+import time
 from functools import lru_cache
 from typing import Dict, List, Optional
 
 from .config import settings
 from .personas import (
     PERSONAS,
-    DEFAULT_PERSONA,
     PERSONA_LIBRARY,
     rule_based_scores,
     rule_based_guess,
@@ -27,11 +30,60 @@ from .personas import (
 def get_client():
     if not settings.has_api_key:
         raise RuntimeError(
-            "OPENAI_API_KEY is not set. Copy .env.example to .env and add your key."
+            "GOOGLE_API_KEY is not set. Copy .env.example to .env and add your key."
         )
-    from openai import OpenAI
+    from google import genai
 
-    return OpenAI(api_key=settings.openai_api_key)
+    return genai.Client(api_key=settings.google_api_key)
+
+
+# Transient server states worth retrying (overload / rate limit).
+_RETRY_STATUS = (429, 500, 503)
+_MAX_RETRIES = 4
+
+
+def _generate(system: str, contents, *, temperature: float, json_mode: bool = False) -> str:
+    """Thin wrapper around Gemini generate_content with a system instruction.
+
+    Retries transient 429/500/503 responses with exponential backoff, since the
+    free tier occasionally returns 503 "high demand".
+    """
+    from google.genai import types
+    from google.genai import errors as genai_errors
+
+    client = get_client()
+    config = types.GenerateContentConfig(
+        system_instruction=system,
+        temperature=temperature,
+        response_mime_type="application/json" if json_mode else "text/plain",
+    )
+
+    last_exc: Optional[Exception] = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            resp = client.models.generate_content(
+                model=settings.gemini_model, contents=contents, config=config
+            )
+            return (resp.text or "").strip()
+        except genai_errors.APIError as exc:
+            status = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+            if status in _RETRY_STATUS and attempt < _MAX_RETRIES - 1:
+                last_exc = exc
+                time.sleep(2 ** attempt)  # 1s, 2s, 4s
+                continue
+            raise
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("generate_content failed without an exception")
+
+
+def _history_to_contents(history: Optional[List[Dict]]) -> List[Dict]:
+    """Map our {'role': 'user'|'assistant'} history to Gemini's user/model turns."""
+    contents: List[Dict] = []
+    for m in history or []:
+        role = "model" if m["role"] == "assistant" else "user"
+        contents.append({"role": role, "parts": [{"text": m["content"]}]})
+    return contents
 
 
 # --- Persona detection -------------------------------------------------------
@@ -55,7 +107,8 @@ def detect_persona(message: str, history: Optional[List[Dict]] = None) -> Dict:
         f"{_PERSONA_DESCRIPTIONS}\n\n"
         "Also rate sentiment from -1 (very negative/angry) to 1 (very positive). "
         "Consider the conversation so far if provided. "
-        "Respond ONLY as compact JSON with keys: persona, confidence, sentiment, reason."
+        "Respond ONLY as compact JSON with keys: persona, confidence, sentiment, reason. "
+        f"'persona' must be exactly one of: {PERSONAS}."
     )
 
     convo = ""
@@ -67,23 +120,13 @@ def detect_persona(message: str, history: Optional[List[Dict]] = None) -> Dict:
 
     user = (
         f"{convo}Latest user message:\n\"\"\"{message}\"\"\"\n\n"
-        f"Rule-based keyword hits (hint, not authoritative): {rule_scores}\n"
-        f"Valid personas: {PERSONAS}"
+        f"Rule-based keyword hits (hint, not authoritative): {rule_scores}"
     )
 
     try:
-        client = get_client()
-        resp = client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-        data = json.loads(resp.choices[0].message.content)
-        persona = data.get("persona", "").strip()
+        raw = _generate(system, user, temperature=0, json_mode=True)
+        data = json.loads(raw)
+        persona = str(data.get("persona", "")).strip()
         if persona not in PERSONAS:
             persona = rule_based_guess(message)
         return {
@@ -137,49 +180,36 @@ def generate_answer(
 
     context = _format_context(context_blocks) if context_blocks else "(no relevant context found)"
 
-    messages = [{"role": "system", "content": system}]
-    if history:
-        for m in history[-6:]:
-            messages.append({"role": m["role"], "content": m["content"]})
-    messages.append(
+    contents = _history_to_contents(history[-6:] if history else None)
+    contents.append(
         {
             "role": "user",
-            "content": (
-                f"Knowledge-base context:\n{context}\n\n"
-                f"User question: {query}\n\n"
-                "Write the response now, adapted to the persona and grounded in the context."
-            ),
+            "parts": [
+                {
+                    "text": (
+                        f"Knowledge-base context:\n{context}\n\n"
+                        f"User question: {query}\n\n"
+                        "Write the response now, adapted to the persona and grounded "
+                        "in the context."
+                    )
+                }
+            ],
         }
     )
 
-    client = get_client()
-    resp = client.chat.completions.create(
-        model=settings.openai_model,
-        temperature=0.3,
-        messages=messages,
-    )
-    return resp.choices[0].message.content.strip()
+    return _generate(system, contents, temperature=0.3)
 
 
 def summarize_issue(history: List[Dict]) -> str:
     """One-line summary of the user's core issue, for the handoff packet."""
     convo = "\n".join(f"{m['role']}: {m['content']}" for m in history)
     try:
-        client = get_client()
-        resp = client.chat.completions.create(
-            model=settings.openai_model,
+        return _generate(
+            "Summarize the customer's core issue in one short sentence.",
+            convo,
             temperature=0,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Summarize the customer's core issue in one short sentence.",
-                },
-                {"role": "user", "content": convo},
-            ],
         )
-        return resp.choices[0].message.content.strip()
     except Exception:
-        # fallback: first user message
         for m in history:
             if m["role"] == "user":
                 return m["content"][:200]
